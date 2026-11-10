@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>W9 · 영어 단어 퀴즈</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f0f4ff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1rem;
+    }
+
+    header { text-align: center; padding: 1rem 0 1.5rem; }
+    header h1 { font-size: 0.95rem; font-weight: 700; color: #3b4a6b; letter-spacing: 0.03em; }
+    header p  { font-size: 0.75rem; color: #7a89a8; margin-top: 0.25rem; }
+
+    .card {
+      background: white;
+      border-radius: 1rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 2rem;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .progress { font-size: 0.75rem; color: #7a89a8; text-align: right; margin-bottom: 1rem; }
+
+    .word   { font-size: 2.5rem; font-weight: 800; color: #1e2a4a; text-align: center;
+              margin-bottom: 0.4rem; letter-spacing: -0.02em; }
+    .prompt { font-size: 0.85rem; color: #7a89a8; text-align: center; margin-bottom: 1.75rem; }
+
+    .options { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+    .opt-btn {
+      padding: 0.85rem 0.5rem;
+      border: 2px solid #e2e8f4;
+      border-radius: 0.6rem;
+      background: white;
+      font-size: 0.95rem;
+      color: #2d3a5a;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    }
+    .opt-btn:hover:not(:disabled) {
+      background: #f0f4ff; border-color: #a0b0d4; transform: translateY(-1px);
+    }
+    .opt-btn:disabled { cursor: default; }
+    .opt-btn.correct  { background: #dcfce7; border-color: #22c55e; color: #166534; }
+    .opt-btn.wrong    { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
+
+    .feedback   { margin-top: 1rem; font-size: 0.9rem; font-weight: 600;
+                  text-align: center; min-height: 1.4em; }
+    .feedback.ok { color: #16a34a; }
+    .feedback.ng { color: #dc2626; }
+
+    .save-status { margin-top: 0.4rem; font-size: 0.75rem; color: #94a3b8;
+                   text-align: center; min-height: 1.2em; }
+
+    .next-btn {
+      display: block; width: 100%; margin-top: 1.25rem; padding: 0.85rem;
+      background: #3b4a6b; color: white; border: none; border-radius: 0.6rem;
+      font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.15s;
+    }
+    .next-btn:hover { background: #2d3a5a; }
+
+    /* 결과 화면 */
+    .score-screen { text-align: center; }
+    .score-label  { font-size: 0.85rem; color: #7a89a8; margin-bottom: 0.5rem; }
+    .score-big    { font-size: 4rem; font-weight: 900; color: #1e2a4a; line-height: 1; }
+    .score-denom  { font-size: 1.5rem; color: #7a89a8; }
+    .score-msg    { font-size: 1rem; color: #3b4a6b; margin: 1rem 0 1.5rem; }
+    .retry-btn {
+      padding: 0.85rem 2rem; background: #3b4a6b; color: white;
+      border: none; border-radius: 0.6rem; font-size: 1rem; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .retry-btn:hover { background: #2d3a5a; }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>HUFS GSE · W9 | GenAI + GitHub Pages + Supabase</h1>
+  <p>W9 · 학생 실습자료 · 2026-10-25</p>
+</header>
+
+<div class="card" id="quiz-card">
+  <div class="progress" id="progress"></div>
+  <div class="word"   id="word"></div>
+  <div class="prompt">이 단어의 뜻으로 알맞은 것을 고르세요.</div>
+  <div class="options" id="options"></div>
+  <div class="feedback"    id="feedback"></div>
+  <div class="save-status" id="save-status"></div>
+  <button class="next-btn hidden" id="next-btn"></button>
+</div>
+
+<div class="card score-screen hidden" id="score-card">
+  <div class="score-label">최종 점수</div>
+  <div class="score-big" id="score-big"></div>
+  <div class="score-msg" id="score-msg"></div>
+  <button class="retry-btn" id="retry-btn">다시 풀기</button>
+</div>
+
+<script>
+  /* ── 설정 (배포 전 이 두 줄만 교체) ─────────────── */
+  const SUPABASE_URL           = "https://dxucstrviiirzanypvdj.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_K—V9YDjzlwS2wLZd3Ln4A_CXr9UKK-";
+
+  /* ── Supabase 클라이언트 ────────────────────────── */
+  const { createClient } = window.supabase;
+  const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+  /* ── 문제 데이터 ────────────────────────────────── */
+  const QUESTIONS = [
+    { no: 1, word: "abundant",
+      options: ["조용한", "풍부한", "위험한", "느린"],
+      correct: "풍부한" },
+    { no: 2, word: "reluctant",
+      options: ["주저하는", "열정적인", "정확한", "부지런한"],
+      correct: "주저하는" },
+    { no: 3, word: "brief",
+      options: ["강력한", "평범한", "짧은", "불규칙한"],
+      correct: "짧은" },
+  ];
+
+  /* ── 상태 ───────────────────────────────────────── */
+  let attemptId     = crypto.randomUUID();
+  let currentIndex  = 0;
+  let score         = 0;
+  let questionStart = 0;   // performance.now() 기준
+  let answerLocked  = false;
+
+  /* ── DOM 참조 ───────────────────────────────────── */
+  const quizCard   = document.getElementById("quiz-card");
+  const scoreCard  = document.getElementById("score-card");
+  const progressEl = document.getElementById("progress");
+  const wordEl     = document.getElementById("word");
+  const optionsEl  = document.getElementById("options");
+  const feedbackEl = document.getElementById("feedback");
+  const saveEl     = document.getElementById("save-status");
+  const nextBtn    = document.getElementById("next-btn");
+  const scoreBig   = document.getElementById("score-big");
+  const scoreMsg   = document.getElementById("score-msg");
+  const retryBtn   = document.getElementById("retry-btn");
+
+  /* ── 문제 렌더링 ────────────────────────────────── */
+  function renderQuestion(idx) {
+    const q = QUESTIONS[idx];
+    answerLocked = false;
+
+    progressEl.textContent   = `${idx + 1} / ${QUESTIONS.length}`;
+    wordEl.textContent        = q.word;
+    feedbackEl.textContent    = "";
+    feedbackEl.className      = "feedback";
+    saveEl.textContent        = "";
+    nextBtn.classList.add("hidden");
+
+    optionsEl.innerHTML = "";
+    q.options.forEach(opt => {
+      const btn = document.createElement("button");
+      btn.className   = "opt-btn";
+      btn.textContent = opt;
+      btn.addEventListener("click", () => handleAnswer(opt, q, btn));
+      optionsEl.appendChild(btn);
+    });
+
+    questionStart = performance.now();   // 문제 표시 직후 타이머 시작
+  }
+
+  /* ── 답 선택 처리 ────────────────────────────────── */
+  async function handleAnswer(chosen, q, clickedBtn) {
+    if (answerLocked) return;
+    answerLocked = true;                 // 이후 클릭 차단 (INSERT 1회 보장)
+
+    const elapsed = Math.round(performance.now() - questionStart);
+    const correct = (chosen === q.correct);
+
+    /* 버튼 비활성화 + 시각 피드백 */
+    document.querySelectorAll(".opt-btn").forEach(btn => {
+      btn.disabled = true;
+      if (btn.textContent === q.correct) btn.classList.add("correct");
+    });
+    if (!correct) clickedBtn.classList.add("wrong");
+
+    /* 텍스트 피드백 */
+    feedbackEl.textContent = correct
+      ? "✓ 정답!"
+      : `✗ 오답 — 정답은 "${q.correct}"`;
+    feedbackEl.className = "feedback " + (correct ? "ok" : "ng");
+
+    if (correct) score++;
+
+    /* Supabase INSERT — 실패해도 퀴즈 계속 */
+    saveEl.textContent = "저장 중…";
+    try {
+      const { error } = await sb.from("quiz_answers").insert({
+        attempt_id:       attemptId,
+        question_no:      q.no,
+        english_word:     q.word,
+        chosen_answer:    chosen,
+        is_correct:       correct,
+        response_time_ms: elapsed,
+      });
+      saveEl.textContent = error
+        ? `⚠ 저장 실패 (${error.message})`
+        : "✓ 저장됨";
+    } catch (err) {
+      saveEl.textContent = `⚠ 저장 실패 (${err.message})`;
+    }
+
+    /* 다음/결과 버튼 표시 */
+    const isLast = (currentIndex === QUESTIONS.length - 1);
+    nextBtn.textContent = isLast ? "결과 보기" : "다음 문제";
+    nextBtn.classList.remove("hidden");
+  }
+
+  /* ── 다음 버튼 ──────────────────────────────────── */
+  nextBtn.addEventListener("click", () => {
+    currentIndex++;
+    if (currentIndex < QUESTIONS.length) {
+      renderQuestion(currentIndex);
+    } else {
+      showScore();
+    }
+  });
+
+  /* ── 결과 화면 ──────────────────────────────────── */
+  function showScore() {
+    quizCard.classList.add("hidden");
+    scoreCard.classList.remove("hidden");
+    scoreBig.innerHTML =
+      `${score}<span class="score-denom"> / 3</span>`;
+    const msgs = [
+      "다음엔 더 잘할 수 있어요! 💪",
+      "한 문제 맞혔어요. 다시 도전해 봐요! 👊",
+      "두 문제 정답! 아주 잘했어요! 👍",
+      "세 문제 모두 정답! 완벽해요! 🏆",
+    ];
+    scoreMsg.textContent = msgs[score];
+  }
+
+  /* ── 다시 풀기 ──────────────────────────────────── */
+  retryBtn.addEventListener("click", () => {
+    attemptId    = crypto.randomUUID();   // 새 응시 ID 생성
+    currentIndex = 0;
+    score        = 0;
+    scoreCard.classList.add("hidden");
+    quizCard.classList.remove("hidden");
+    renderQuestion(0);
+  });
+
+  /* ── 첫 문제 시작 ───────────────────────────────── */
+  renderQuestion(0);
+</script>
+</body>
+</html>
